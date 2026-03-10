@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
 
-  # Demo Postgres database with sample data
+  # Demo Postgres — sample SaaS data for context building demo
   demo-db:
     image: postgres:16-alpine
     environment:
@@ -19,7 +19,7 @@ services:
       timeout: 3s
       retries: 5
 
-  # Context storage database (separate from demo data)
+  # Context storage — Postgres backend for versioned semantic model
   context-db:
     image: postgres:16-alpine
     environment:
@@ -48,19 +48,10 @@ services:
       DATAFLY_LOG_LEVEL: INFO
     volumes:
       - ./context:/app/context
+      - ./docker/entrypoint.sh:/app/entrypoint.sh
     depends_on:
       demo-db:
         condition: service_healthy
       context-db:
         condition: service_healthy
-    command: >
-      sh -c "
-        python -c \"
-from datafly import Datafly
-df = Datafly()
-df.connect('postgresql://datafly:datafly@demo-db:5432/demo', name='demo_postgres')
-df.build_context()
-print('Context built. Starting server...')
-df.serve(host='0.0.0.0', port=8000)
-\"
-      "
+    command: ["sh", "/app/entrypoint.sh"]
