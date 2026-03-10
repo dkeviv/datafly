@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "datafly-gateway"
+version = "0.1.0"
+description = "Universal data gateway with AI-powered semantic context layer for data agents"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.11"
+authors = [{ name = "Cogumi", email = "hello@cogumi.ai" }]
+keywords = ["data", "agents", "semantic layer", "gateway", "AI", "LLM", "MCP"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Database",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "anthropic>=0.40.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "pydantic>=2.0.0",
+    "pyyaml>=6.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+postgres = ["psycopg2-binary>=2.9.0"]
+snowflake = ["snowflake-connector-python>=3.0.0"]
+bigquery = ["google-cloud-bigquery>=3.0.0"]
+redshift = ["redshift-connector>=2.0.0"]
+mongo = ["pymongo>=4.0.0"]
+salesforce = ["simple-salesforce>=1.12.0"]
+dynamodb = ["boto3>=1.34.0"]
+hubspot = ["requests>=2.31.0"]  # already in core deps
+
+# Install all adapters
+all = [
+    "psycopg2-binary>=2.9.0",
+    "snowflake-connector-python>=3.0.0",
+    "google-cloud-bigquery>=3.0.0",
+    "redshift-connector>=2.0.0",
+    "pymongo>=4.0.0",
+    "simple-salesforce>=1.12.0",
+    "boto3>=1.34.0",
+]
+
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "httpx>=0.27",
+    "black",
+    "ruff",
+]
+
+[project.scripts]
+datafly = "datafly.cli:main"
+
+[project.urls]
+Homepage = "https://datafly.dev"
+Repository = "https://github.com/cogumi-ai/datafly"
+Documentation = "https://docs.datafly.dev"
+Issues = "https://github.com/cogumi-ai/datafly/issues"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
