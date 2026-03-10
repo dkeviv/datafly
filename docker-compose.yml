@@ -1,0 +1,66 @@
+version: "3.9"
+
+services:
+
+  # Demo Postgres database with sample data
+  demo-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: demo
+      POSTGRES_USER: datafly
+      POSTGRES_PASSWORD: datafly
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U datafly -d demo"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Context storage database (separate from demo data)
+  context-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: datafly_context
+      POSTGRES_USER: datafly
+      POSTGRES_PASSWORD: datafly
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U datafly -d datafly_context"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Datafly gateway
+  datafly:
+    build: .
+    ports:
+      - "8000:8000"
+      - "8080:8080"
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      DATAFLY_CONTEXT_BACKEND: hybrid
+      DATAFLY_CONTEXT_DB_URL: postgresql://datafly:datafly@context-db:5432/datafly_context
+      DATAFLY_CONTEXT_YAML: /app/context/context.yaml
+      DATAFLY_LOG_LEVEL: INFO
+    volumes:
+      - ./context:/app/context
+    depends_on:
+      demo-db:
+        condition: service_healthy
+      context-db:
+        condition: service_healthy
+    command: >
+      sh -c "
+        python -c \"
+from datafly import Datafly
+df = Datafly()
+df.connect('postgresql://datafly:datafly@demo-db:5432/demo', name='demo_postgres')
+df.build_context()
+print('Context built. Starting server...')
+df.serve(host='0.0.0.0', port=8000)
+\"
+      "
