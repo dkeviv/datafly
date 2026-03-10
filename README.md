@@ -1,144 +1,105 @@
 # Datafly
 
-**A universal data gateway with an AI-powered semantic context layer for data agents.**
+**Your data agents are failing because they don't understand your data. Datafly fixes that.**
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
+[![PyPI](https://img.shields.io/pypi/v/datafly-gateway)](https://pypi.org/project/datafly-gateway)
+[![Discord](https://img.shields.io/badge/Discord-join-5865F2)](https://discord.gg/datafly)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
 ---
 
-Data agents fail not because models are bad at SQL — but because they have no idea how your business actually works.
+## The problem
 
-**Conduit solves this.** It sits between your agents and your databases, automatically building a semantic context layer from your existing schemas and query history. Agents connect to one endpoint. They get answers that actually make sense.
+You connect an agent to your database. You ask it a simple question.
 
 ```
-Your Agents
-    ↓
-[ Datafly Gateway ]   ← single connection point, any database
-    ↓
-[ Context Layer ]     ← auto-built from your schema + query history
-    ↓
-Postgres · Snowflake · BigQuery · MongoDB · Salesforce · ...
+You:   "What was our revenue last quarter?"
+
+Agent: SELECT SUM(amount) FROM orders WHERE date > '2024-10-01'
+       -> $0.00
 ```
+
+Wrong table. Wrong date logic. Your fiscal Q4 ends November 30. Revenue lives in `fct_revenue`, not `orders`. Refunds need to be excluded. The agent has no idea — and neither does any tool you've tried.
+
+**This is not a model problem. It's a context problem.**
 
 ---
 
-## The Problem
+## What Datafly does
 
-```sql
--- Agent asks: "What was revenue last quarter?"
--- Agent generates:
-SELECT SUM(amount) FROM orders WHERE date > '2024-10-01'
+Datafly sits between your agents and your databases. It automatically builds a **semantic context layer** — a living model of what your data actually means — and injects it into every query.
 
--- Reality: revenue lives in fct_revenue, fiscal Q4 ends Nov 30,
--- and you exclude refunds. Agent has no idea. Query is wrong.
+```
+Agent asks: "What was revenue last quarter?"
+                    |
+        [ Datafly Context Layer ]
+          knows: revenue = fct_revenue
+          knows: fiscal Q4 ends Nov 30
+          knows: exclude refunds + trials
+                    |
+SELECT SUM(arr) FROM fct_revenue
+WHERE fiscal_quarter = 'FY2025-Q1'
+AND is_expansion = FALSE
+-> $1,806,000   (correct)
 ```
 
-Without context, agents hallucinate metrics, query the wrong tables, and produce numbers nobody trusts.
-
-## The Solution
-
-Conduit's **Context Creation Agent** introspects your databases and mines your query history to automatically build a semantic model — entities, metric definitions, source-of-truth routing, business rules — then serves it to your agents at query time.
-
-```yaml
-# Auto-generated context (datafly/context/metrics.yaml)
-metrics:
-  revenue:
-    description: "Recognized ARR, excluding refunds and trials"
-    source_of_truth: fct_revenue
-    fiscal_quarter: "Nov 30 end"
-    confidence: 0.94
-    derived_from: "query_history_analysis + schema_introspection"
-```
-
----
-
-## Features
-
-- **Universal adapters** — Postgres, Snowflake, BigQuery, Redshift, MongoDB, DynamoDB, Salesforce, HubSpot (more via PRs)
-- **Auto context generation** — LLM analyzes schema + query history, outputs a structured semantic model
-- **Confidence scoring** — high-confidence definitions auto-accepted, low-confidence flagged for human review
-- **MCP compatible** — expose Conduit as an MCP server; your agents connect with zero changes
-- **Self-healing** — failed or corrected queries feed back into the context layer automatically
-- **Git-native** — context layer is versioned YAML, lives in your repo, reviewed like code
-- **Zero lock-in** — Apache 2.0, runs anywhere, own your data
+No prompt engineering. No manual schema docs. It figures this out from your actual database.
 
 ---
 
 ## Quickstart
 
 ```bash
-pip install datafly-gateway
+pip install datafly-gateway[postgres]
 ```
 
 ```python
 from datafly import Datafly
 
-c = Datafly()
+df = Datafly()
+df.connect("postgresql://user:pass@localhost/mydb", name="prod")
+df.build_context()   # LLM reads your schema + query history, builds the model
 
-# Connect your databases
-c.connect("postgres://user:pass@localhost/mydb", name="prod_postgres")
-c.connect("snowflake://account/warehouse/db", name="analytics")
-
-# Auto-build context layer from schema + query history
-c.build_context()
-
-# Query through unified gateway — context injected automatically
-result = c.query("What was revenue last quarter?")
+result = df.query("What was revenue last quarter?")
+print(result["rows"])
+# [{"fiscal_quarter": "FY2025-Q1", "total_arr": 1806000}]
 ```
 
-That's it. Conduit introspects your databases, mines query history, builds the semantic model, and serves it at query time.
+Or with Docker — demo database, UI, everything included:
+
+```bash
+git clone https://github.com/dkeviv/datafly
+cd datafly
+cp .env.example .env   # add your LLM API key
+docker compose up
+# API: http://localhost:8000
+# UI:  open ui/index.html in your browser
+```
 
 ---
 
-## Architecture
+## How the context layer works
 
-```
-┌─────────────────────────────────────────────┐
-│              Datafly Gateway                │
-│                                             │
-│  ┌──────────┐    ┌────────────────────────┐ │
-│  │  REST /  │    │   Context Creation     │ │
-│  │  MCP API │───▶│       Agent            │ │
-│  └──────────┘    │  (LLM-powered)         │ │
-│       │          └────────────┬───────────┘ │
-│       │                       │             │
-│       ▼          ┌────────────▼───────────┐ │
-│  ┌──────────┐    │   Semantic Context     │ │
-│  │  Query   │◀───│       Layer            │ │
-│  │  Router  │    │  (versioned YAML/JSON) │ │
-│  └────┬─────┘    └────────────────────────┘ │
-│       │                                     │
-└───────┼─────────────────────────────────────┘
-        │
-        ▼
-┌───────────────────────────────────────────┐
-│              Adapter Layer                │
-│  Postgres  Snowflake  MongoDB  Salesforce │
-│  BigQuery  Redshift   DynamoDB  HubSpot   │
-└───────────────────────────────────────────┘
-```
+When you run `build_context()`, Datafly's Context Agent does three things:
 
-### Components
+**1. Reads your schema** — every table, column, foreign key, and real sample values (not just types)
 
-| Component | Description |
-|---|---|
-| **Gateway** | FastAPI core, handles routing, auth, rate limiting |
-| **Adapters** | Thin DB-specific wrappers — introspect schema, execute queries |
-| **Context Agent** | LLM chain that builds semantic model from schema + query history |
-| **Context Layer** | Versioned YAML — entities, metrics, routing rules, confidence scores |
-| **Query Router** | Matches incoming queries to right adapter + injects context |
-| **MCP Server** | Exposes gateway as MCP endpoint for agent frameworks |
+**2. Mines your query history** — finds patterns in past SQL to infer business meaning
 
----
-
-## Context Layer Example
-
-After running `c.build_context()`, Conduit generates a human-reviewable context file:
+**3. Produces a semantic model** — entities, metric definitions, routing rules, tribal knowledge, with confidence scores
 
 ```yaml
-# datafly/context/context.yaml
+# datafly/context/context.yaml  (auto-generated, human-editable)
+
+metrics:
+  revenue:
+    description: "Recognized ARR excluding refunds and trial conversions"
+    source_of_truth: fct_revenue
+    formula: "SUM(arr) WHERE is_expansion = FALSE"
+    aliases: ["ARR", "MRR", "bookings"]
+    confidence: 0.94
 
 entities:
   customer:
@@ -147,92 +108,358 @@ entities:
     primary_key: customer_id
     confidence: 0.97
 
-  revenue:
-    source_of_truth: fct_revenue
-    aliases: ["ARR", "MRR", "bookings"]
-    exclude_fields: ["refund_amount", "trial_revenue"]
-    fiscal_year_end: "November 30"
-    confidence: 0.91
-    review_flag: false
-
-routing_rules:
-  - pattern: "revenue*"
-    adapter: snowflake_analytics
-    table: fct_revenue
-  - pattern: "customer*"
-    adapter: prod_postgres
-    table: dim_customer
-
 tribal_knowledge:
-  - "For CRM data, use Salesforce for deals after 2024-01-01, legacy Postgres before"
-  - "Monthly active users excludes internal @company.com accounts"
+  - "Fiscal year ends November 30. Q1=Dec-Feb, Q2=Mar-May, Q3=Jun-Aug, Q4=Sep-Nov"
+  - "Active customers: status = 'active' AND churned_at IS NULL"
+  - "Enterprise MRR is calculated from fct_revenue, not the CRM"
 ```
 
-Low-confidence entries are flagged automatically. Edit and commit — it's just a file.
+This file lives in your repo. Review it like code. Edit it. Commit it. It gets better with every correction.
 
 ---
 
-## Supported Adapters
+## The agentic query loop
 
-| Adapter | Status | Introspection | Query History |
-|---|---|---|---|
-| PostgreSQL | ✅ Stable | `information_schema` | `pg_stat_statements` |
-| Snowflake | ✅ Stable | `INFORMATION_SCHEMA` | `QUERY_HISTORY` |
-| BigQuery | ✅ Stable | `INFORMATION_SCHEMA` | `JOBS` table |
-| MongoDB | ✅ Stable | Document sampling | `system.profile` |
-| Salesforce | ✅ Stable | `describe()` API | API logs |
-| Redshift | ✅ Stable | `information_schema` | `STL_QUERY` |
-| DynamoDB | ✅ Stable | Table + GSI describe | CloudWatch (optional) |
-| HubSpot | ✅ Stable | Properties API | — |
+Datafly doesn't just generate SQL once and hope. It runs a **Plan -> Generate -> Execute -> Reflect -> Retry** loop:
+
+```
+Question: "What is our net revenue retention?"
+    |
+  [Plan]      reason about which tables, joins, and metric definitions apply
+    |
+  [Generate]  write SQL grounded in the plan + real sample values from the DB
+    |
+  [Execute]   run against your actual database
+    |
+  [Reflect]   if error or empty result: reason about what went wrong
+    |
+  [Retry]     rewrite with the error as context (up to 3 attempts)
+    |
+  Result      or honest failure with the last attempted query shown
+```
+
+No fixed rules. No hardcoded prompt patches. The agent reasons its way to the right answer.
 
 ---
 
-## MCP Integration
+## Four ways to use Datafly
 
-Conduit exposes itself as an MCP server out of the box:
+Datafly is the same engine underneath — pick the interface that fits your workflow.
+
+```
++--------------------------------------------------+
+|             Your choice of interface             |
+|                                                  |
+|  Web UI      CLI        REST API       MCP       |
+|  (humans)  (terminal)  (any client)  (agents)    |
++--------------------------------------------------+
+                      |
+            [ Datafly Gateway ]
+       semantic context + query routing
+                      |
+      Postgres . Snowflake . Mongo . ...
+```
+
+---
+
+### 1 — Web UI
+
+The fastest way to get started. Open `ui/index.html` in any browser — no build step needed beyond the running API.
+
+**Connections tab** — add a database in three steps:
+
+1. Pick the DB type (Postgres, Snowflake, MongoDB, etc.)
+2. Paste the connection URI — the format hint updates automatically
+3. Click **Test Connection** — if green, click **Connect & Discover Schema**
+
+Datafly tests the connection, introspects the schema, builds the context layer, and drops you into the chat. Done.
+
+**Chat tab** — ask in plain English:
+
+```
+You:     "Which enterprise customers haven't logged in this month?"
+
+Result:  2 rows  [Acme Corp: last active 2025-02-14]
+                 [Umbrella Ltd: last active 2025-01-30]
+
+SQL:     SELECT c.company_name, MAX(a.event_date) AS last_active
+         FROM dim_customer c
+         LEFT JOIN fct_user_activity a ON c.customer_id = a.customer_id
+         WHERE c.plan = 'enterprise'
+         GROUP BY c.company_name
+         HAVING MAX(a.event_date) < DATE_TRUNC('month', NOW())
+```
+
+Every result shows the generated SQL. If the answer is wrong, type a correction in the feedback box — it updates the context layer immediately.
+
+---
+
+### 2 — CLI
+
+Best for automation, scripts, and developers who live in the terminal.
+
+**Setup:**
+
+```bash
+pip install datafly-gateway[postgres]
+
+export ANTHROPIC_API_KEY=sk-ant-...   # or OPENROUTER_API_KEY
+
+datafly connect postgresql://user:pass@localhost/mydb --name prod
+datafly build
+```
+
+**Query:**
+
+```bash
+$ datafly query "What is our MRR by plan?"
+
+Searching: What is our MRR by plan?
+[prod] 3 rows
+
+  plan        mrr
+  ----------  ----------
+  enterprise  139500.00
+  growth      10000.00
+  starter     1000.00
+```
+
+```bash
+# Raw JSON for scripting
+datafly query "total ARR" --json | jq '.rows[0].total_arr'
+```
+
+**Manage context:**
+
+```bash
+datafly review                            # show low-confidence items flagged for review
+datafly approve revenue                   # approve a flagged metric
+datafly tribal "Fiscal year ends Nov 30"  # add a business rule manually
+datafly build --force                     # rebuild from scratch
+datafly status                            # show connected sources + context state
+```
+
+**Full command reference:**
+
+```
+datafly status                        Show connected sources and context state
+datafly connect <uri> --name <name>   Connect a data source
+datafly build [--force]               Build or rebuild the context layer
+datafly query "<question>" [--json]   Run a natural language query
+datafly review                        List items needing human review
+datafly approve <entity>              Approve a flagged entity or metric
+datafly tribal "<rule>"               Add a business rule to the context
+datafly serve [--port 8000]           Start the REST API server
+datafly serve-mcp [--port 8080]       Start the MCP server
+```
+
+---
+
+### 3 — REST API
+
+Run Datafly as a persistent service. Any language, any HTTP client.
+
+```bash
+datafly serve --port 8000
+# Swagger UI: http://localhost:8000/docs
+```
+
+**Connect a database:**
+
+```bash
+curl -X POST http://localhost:8000/connect \
+  -H "Content-Type: application/json" \
+  -d '{"connection_string": "postgresql://user:pass@host/db", "name": "prod"}'
+```
+
+**Test a connection without saving it:**
+
+```bash
+curl -X POST http://localhost:8000/connect/test \
+  -H "Content-Type: application/json" \
+  -d '{"connection_string": "postgresql://user:pass@host/db", "name": "test"}'
+
+# -> {"status": "ok", "table_count": 12, "tables": ["dim_customer", "fct_revenue", ...]}
+```
+
+**Build context:**
+
+```bash
+curl -X POST http://localhost:8000/context/build
+```
+
+**Query:**
+
+```bash
+curl -X POST http://localhost:8000/query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What is total ARR by plan?"}'
+
+# -> {"success": true, "query": "SELECT plan, SUM(arr)...", "rows": [...], "row_count": 3}
+```
+
+**Submit a correction:**
+
+```bash
+curl -X POST http://localhost:8000/feedback \
+  -H "Content-Type: application/json" \
+  -d '{"query_id": "abc123", "correction": "ARR should exclude trial customers"}'
+```
+
+Full endpoint list at `http://localhost:8000/docs`.
+
+---
+
+### 4 — MCP (for AI agents)
+
+Start the MCP server and point any MCP-compatible agent at it. No custom tool definitions needed.
+
+```bash
+datafly serve-mcp --port 8080
+```
+
+Or from Python:
 
 ```python
-c.serve_mcp(port=8080)
-# Agents connect to: mcp://localhost:8080
+from datafly import Datafly
+
+df = Datafly()
+df.connect("postgresql://...", name="prod")
+df.build_context()
+df.serve_mcp(port=8080)
 ```
 
-Works with Claude, LangChain, LlamaIndex, CrewAI, and any MCP-compatible agent framework.
+Three tools are exposed automatically:
+
+| Tool | What it does |
+|------|-------------|
+| `query_data` | Natural language -> SQL -> results, context injected automatically |
+| `get_context` | Returns the semantic model (entities, metrics, tribal knowledge) |
+| `list_adapters` | Lists all connected data sources |
+
+**Claude Desktop** (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "datafly": {
+      "url": "http://localhost:8080/mcp/sse"
+    }
+  }
+}
+```
+
+**LangChain:**
+
+```python
+from langchain_mcp import MCPToolkit
+
+toolkit = MCPToolkit(url="http://localhost:8080/mcp/sse")
+tools = toolkit.get_tools()
+# -> [query_data, get_context, list_adapters]
+```
+
+Works with LlamaIndex, CrewAI, AutoGen, and any framework that supports MCP or HTTP tool calls.
+
+---
+
+## Works with every data stack
+
+| Source | Status | Notes |
+|--------|--------|-------|
+| PostgreSQL | stable | `information_schema` + `pg_stat_statements` |
+| Snowflake | stable | `INFORMATION_SCHEMA` + `QUERY_HISTORY` |
+| BigQuery | stable | `INFORMATION_SCHEMA` + `JOBS` |
+| Redshift | stable | `information_schema` + `STL_QUERY` |
+| MongoDB | stable | Document sampling + `system.profile` |
+| DynamoDB | stable | Table + GSI describe |
+| Salesforce | stable | `describe()` API |
+| HubSpot | stable | Properties API |
+| MySQL | coming soon | PR welcome |
+| dbt / LookML | coming soon | Import existing semantic model |
+
+---
+
+## Architecture
+
+```
+Your Agents / LLMs
+        |
++---------------------------------------+
+|          Datafly Gateway              |
+|                                       |
+|  Web UI   --+                         |
+|  CLI      --+---> Query Router        |
+|  REST API --+          |              |
+|  MCP      --+          v              |
+|                +---------------+      |
+|                | Semantic      |      |
+|                | Context Layer |      |
+|                | (YAML + DB)   |      |
+|                +-------+-------+      |
+|                        |              |
+|                +-------v-------+      |
+|                | Context Agent |      |
+|                | Plan->Gen     |      |
+|                | ->Execute     |      |
+|                | ->Reflect     |      |
+|                | ->Retry       |      |
+|                +---------------+      |
++-------------------+-------------------+
+                    |
+    Postgres . Snowflake . Mongo . ...
+```
+
+---
+
+## Configuration
+
+Copy `.env.example` to `.env` and add one key:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...
+# or
+OPENROUTER_API_KEY=sk-or-...   # works with Claude, GPT-4, Gemini
+```
+
+Datafly auto-detects which key is present. Everything else has sensible defaults.
 
 ---
 
 ## Roadmap
 
-- [x] Core gateway + adapter pattern
-- [x] Postgres, Snowflake, BigQuery, MongoDB, Salesforce adapters
+- [x] Core gateway with 8 adapters
 - [x] LLM-powered context creation agent
+- [x] Agentic Plan -> Execute -> Reflect query loop
 - [x] Confidence scoring + human review flags
-- [x] MCP server mode
+- [x] MCP server
+- [x] REST API + Python SDK
+- [x] Web UI with connection settings
+- [x] Self-correcting feedback loop
+- [ ] dbt / LookML import
+- [ ] Incremental context updates (no full rebuild needed)
 - [ ] Curation UI (cloud)
-- [ ] Self-healing feedback loop
-- [ ] dbt / LookML import for existing semantic models
-- [ ] Redshift, DynamoDB, HubSpot adapters
-- [ ] Multi-tenant support (cloud)
-- [ ] RBAC + audit logs (enterprise)
+- [ ] Multi-tenant + RBAC (enterprise)
 
 ---
 
 ## Contributing
 
-Conduit is built in the open. Adapter contributions especially welcome — if your database isn't listed, [open a PR](CONTRIBUTING.md).
+Adapters and semantic model importers are the highest-leverage contributions. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ```bash
-git clone https://github.com/cogumi-ai/datafly
+git clone https://github.com/dkeviv/datafly
 cd datafly
 pip install -e ".[dev]"
-pytest tests/
+pytest tests/   # 28 tests, all should pass
 ```
 
 ---
 
 ## License
 
-Apache 2.0 — free to use, modify, and distribute. Commercial cloud and enterprise offerings available at [datafly.dev](https://datafly.dev).
+Apache 2.0. Free to use, modify, deploy. Cloud and enterprise offerings at [datafly.dev](https://datafly.dev).
 
 ---
 
-*Built by [Cogumi](https://cogumi.ai) · [Discord](https://discord.gg/datafly) · [Docs](https://docs.datafly.dev)*
+*Built by dkeviv · [Discord](https://discord.gg/datafly) · [datafly.dev](https://datafly.dev)*

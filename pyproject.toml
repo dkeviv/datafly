@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "datafly-gateway"
@@ -9,7 +9,7 @@ description = "Universal data gateway with AI-powered semantic context layer for
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
-authors = [{ name = "Cogumi", email = "hello@cogumi.ai" }]
+authors = [{ name = "dkeviv" }]
 keywords = ["data", "agents", "semantic layer", "gateway", "AI", "LLM", "MCP"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -38,6 +38,7 @@ mongo = ["pymongo>=4.0.0"]
 salesforce = ["simple-salesforce>=1.12.0"]
 dynamodb = ["boto3>=1.34.0"]
 hubspot = ["requests>=2.31.0"]  # already in core deps
+openrouter = ["openai>=1.0.0"]
 
 # Install all adapters
 all = [
@@ -48,6 +49,7 @@ all = [
     "pymongo>=4.0.0",
     "simple-salesforce>=1.12.0",
     "boto3>=1.34.0",
+    "openai>=1.0.0",
 ]
 
 dev = [
@@ -63,9 +65,9 @@ datafly = "datafly.cli:main"
 
 [project.urls]
 Homepage = "https://datafly.dev"
-Repository = "https://github.com/cogumi-ai/datafly"
+Repository = "https://github.com/dkeviv/datafly"
 Documentation = "https://docs.datafly.dev"
-Issues = "https://github.com/cogumi-ai/datafly/issues"
+Issues = "https://github.com/dkeviv/datafly/issues"
 
 [tool.ruff]
 line-length = 100

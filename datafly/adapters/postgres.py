@@ -1,5 +1,5 @@
 """
-PostgreSQL adapter — uses information_schema + pg_stat_statements
+PostgreSQL adapter — introspects schema with comments, sample values, and query history.
 """
 
 from __future__ import annotations
@@ -17,17 +17,17 @@ class PostgresAdapter(BaseAdapter):
 
     def connect(self) -> None:
         import psycopg2
-        import psycopg2.extras
         self._conn = psycopg2.connect(self.connection_string)
         self._conn.autocommit = True
         logger.info(f"[{self.name}] Connected to Postgres")
 
     def introspect_schema(self) -> dict:
-        cursor = self._conn.cursor(cursor_factory=__import__('psycopg2').extras.RealDictCursor)
+        import psycopg2.extras
+        cursor = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
         # Tables + columns
         cursor.execute("""
-            SELECT 
+            SELECT
                 t.table_name,
                 t.table_type,
                 c.column_name,
@@ -35,8 +35,8 @@ class PostgresAdapter(BaseAdapter):
                 c.is_nullable,
                 c.column_default
             FROM information_schema.tables t
-            JOIN information_schema.columns c 
-                ON t.table_name = c.table_name 
+            JOIN information_schema.columns c
+                ON t.table_name = c.table_name
                 AND t.table_schema = c.table_schema
             WHERE t.table_schema = 'public'
             ORDER BY t.table_name, c.ordinal_position
@@ -62,12 +62,11 @@ class PostgresAdapter(BaseAdapter):
         # Row count estimates
         cursor.execute("""
             SELECT relname, reltuples::bigint AS row_estimate
-            FROM pg_class
-            WHERE relkind = 'r'
+            FROM pg_class WHERE relkind = 'r'
         """)
         counts = {r['relname']: r['row_estimate'] for r in cursor.fetchall()}
 
-        # Build normalized schema
+        # Build schema
         tables = {}
         for row in rows:
             tname = row['table_name']
@@ -78,12 +77,12 @@ class PostgresAdapter(BaseAdapter):
                     "columns": [],
                     "row_count_estimate": counts.get(tname, 0),
                     "primary_key": None,
-                    "foreign_keys": []
+                    "foreign_keys": [],
                 }
             tables[tname]["columns"].append({
                 "name": row['column_name'],
                 "type": row['data_type'],
-                "nullable": row['is_nullable'] == 'YES'
+                "nullable": row['is_nullable'] == 'YES',
             })
 
         for fk in fk_rows:
@@ -94,6 +93,35 @@ class PostgresAdapter(BaseAdapter):
                     "references": f"{fk['foreign_table']}.{fk['foreign_column']}"
                 })
 
+        # Sample real values from every column — this teaches the agent
+        # actual formats, enums, and patterns directly from data (not comments)
+        SAMPLE_TYPES = (
+            'text', 'character varying', 'varchar', 'char',  # strings
+            'integer', 'bigint', 'numeric', 'real', 'double precision',  # numbers
+            'date', 'timestamp', 'timestamp without time zone',  # dates
+            'boolean',
+        )
+        for tname, tinfo in tables.items():
+            if tinfo['_type'] != 'tables':
+                continue
+            for col in tinfo['columns']:
+                if col['type'].lower() not in SAMPLE_TYPES:
+                    continue
+                try:
+                    cursor.execute(f"""
+                        SELECT DISTINCT "{col['name']}"
+                        FROM "{tname}"
+                        WHERE "{col['name']}" IS NOT NULL
+                        ORDER BY 1
+                        LIMIT 5
+                    """)
+                    samples = [r[col['name']] for r in cursor.fetchall()
+                               if r[col['name']] is not None]
+                    if samples:
+                        col['sample_values'] = [str(s) for s in samples]
+                except Exception:
+                    pass
+
         return {
             "adapter": self.name,
             "adapter_type": "postgres",
@@ -102,11 +130,11 @@ class PostgresAdapter(BaseAdapter):
         }
 
     def get_query_history(self, limit: int = 500) -> list[dict]:
-        """Mine pg_stat_statements if available."""
-        cursor = self._conn.cursor(cursor_factory=__import__('psycopg2').extras.RealDictCursor)
+        import psycopg2.extras
+        cursor = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         try:
             cursor.execute(f"""
-                SELECT 
+                SELECT
                     query,
                     calls AS execution_count,
                     mean_exec_time AS avg_duration_ms,
@@ -122,6 +150,7 @@ class PostgresAdapter(BaseAdapter):
             return []
 
     def execute(self, query: str, params: dict | None = None) -> list[dict]:
-        cursor = self._conn.cursor(cursor_factory=__import__('psycopg2').extras.RealDictCursor)
+        import psycopg2.extras
+        cursor = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute(query, params or {})
         return [dict(r) for r in cursor.fetchall()]

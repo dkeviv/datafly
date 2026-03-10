@@ -177,6 +177,20 @@ class Datafly:
         MCPServer(self).serve(port=port)
 
 
+
+def _strip_markdown(query: str) -> str:
+    """Strip markdown code fences that LLMs sometimes add around queries."""
+    query = query.strip()
+    if query.startswith("```"):
+        lines = query.split("\n")
+        # Remove first line (```sql or ```) and last line (```)
+        lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        query = "\n".join(lines).strip()
+    return query
+
+
 class QueryRouter:
     """Routes questions to the right adapter with context injection."""
 
@@ -209,6 +223,7 @@ class QueryRouter:
             context=self.context,
             adapter_type=adapter.adapter_type
         )
+        query = _strip_markdown(query)
 
         try:
             rows = adapter.execute(query)

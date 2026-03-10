@@ -66,6 +66,42 @@ def create_app(datafly=None) -> FastAPI:
         except Exception as e:
             raise HTTPException(400, str(e))
 
+    @app.post("/connect/test")
+    def test_connection(req: ConnectRequest):
+        """Test a connection string without persisting it."""
+        try:
+            from datafly.adapters.factory import AdapterFactory
+            adapter = AdapterFactory.create(req.connection_string, req.name)
+            adapter.connect()
+            schema = adapter.introspect_schema()
+            tables = list(schema.get("tables", {}).keys())
+            adapter.disconnect()
+            return {
+                "status": "ok",
+                "name": req.name,
+                "table_count": len(tables),
+                "tables": tables[:10]
+            }
+        except Exception as e:
+            raise HTTPException(400, {"status": "error", "message": str(e)})
+
+    @app.delete("/adapters/{name}")
+    def disconnect_adapter(name: str):
+        """Remove a connected adapter."""
+        try:
+            if name not in datafly.adapters:
+                raise HTTPException(404, f"Adapter '{name}' not found")
+            adapter = datafly.adapters.pop(name)
+            try:
+                adapter.disconnect()
+            except Exception:
+                pass
+            return {"status": "disconnected", "name": name}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, str(e))
+
     @app.post("/context/build")
     def build_context(force_rebuild: bool = False):
         try:

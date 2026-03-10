@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
 
   # Demo Postgres — sample SaaS data for context building demo
@@ -40,8 +38,9 @@ services:
     ports:
       - "8000:8000"
       - "8080:8080"
+    env_file:
+      - .env
     environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       DATAFLY_CONTEXT_BACKEND: hybrid
       DATAFLY_CONTEXT_DB_URL: postgresql://datafly:datafly@context-db:5432/datafly_context
       DATAFLY_CONTEXT_YAML: /app/context/context.yaml
