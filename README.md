@@ -367,14 +367,14 @@ Works with LlamaIndex, CrewAI, AutoGen, and any framework that supports MCP or H
 
 | Source | Status | Notes |
 |--------|--------|-------|
-| PostgreSQL | stable | `information_schema` + `pg_stat_statements` |
-| Snowflake | stable | `INFORMATION_SCHEMA` + `QUERY_HISTORY` |
-| BigQuery | stable | `INFORMATION_SCHEMA` + `JOBS` |
-| Redshift | stable | `information_schema` + `STL_QUERY` |
-| MongoDB | stable | Document sampling + `system.profile` |
-| DynamoDB | stable | Table + GSI describe |
-| Salesforce | stable | `describe()` API |
-| HubSpot | stable | Properties API |
+| PostgreSQL | beta | `information_schema` + `pg_stat_statements` |
+| Snowflake | beta | `INFORMATION_SCHEMA` + `QUERY_HISTORY` |
+| BigQuery | beta | `INFORMATION_SCHEMA` + `JOBS` |
+| Redshift | beta | `information_schema` + `STL_QUERY` |
+| MongoDB |beta | Document sampling + `system.profile` |
+| DynamoDB | beta | Table + GSI describe |
+| Salesforce | beta | `describe()` API |
+| HubSpot | beta | Properties API |
 | MySQL | coming soon | PR welcome |
 | dbt / LookML | coming soon | Import existing semantic model |
 
