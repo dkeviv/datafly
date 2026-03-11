@@ -1,4 +1,4 @@
-# Contributing to Conduit
+# Contributing to Datafly
 
 Thanks for contributing. Adapter PRs especially welcome.
 
