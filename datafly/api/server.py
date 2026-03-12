@@ -8,6 +8,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 import os
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 # ── Request Models (must be module-level for Pydantic) ───────────────────────
@@ -145,7 +149,14 @@ def create_app(datafly=None) -> FastAPI:
     def run_query(req: QueryRequest):
         result = datafly.query(req.question, adapter_hint=req.adapter_hint)
         if not result.get("success"):
-            raise HTTPException(400, detail=result)
+            logger.error("Query execution failed: %s", result)
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "status": "error",
+                    "message": "Query execution failed.",
+                },
+            )
         return result
 
     @app.post("/feedback")

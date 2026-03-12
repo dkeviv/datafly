@@ -100,9 +100,12 @@ class MCPServer:
                 else:
                     return {"isError": True, "result": f"Unknown tool: {tool}"}
 
-            except Exception as e:
-                logger.error(f"MCP tool error: {e}")
-                return {"isError": True, "result": str(e)}
+            except Exception:
+                logger.exception("MCP tool error while executing tool '%s'", tool)
+                return {
+                    "isError": True,
+                    "result": "Internal server error while executing MCP tool.",
+                }
 
         # SSE endpoint for streaming (used by some MCP clients)
         @app.get("/mcp/sse")
